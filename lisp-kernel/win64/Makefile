@@ -53,9 +53,9 @@ CC = x86_64-w64-mingw32-gcc
 AS = x86_64-w64-mingw32-as
 LD = x86_64-w64-mingw32-ld
 else
-CC = /mingw64/bin/x86_64-w64-mingw32-gcc
-AS = /mingw64/bin/as
-LD = /mingw64/bin/ld
+CC = gcc
+AS = as
+LD = ld
 endif
 
 M4 = m4

@@ -50,9 +50,9 @@ CC = i686-w64-mingw32-gcc
 AS = i686-w64-mingw32-as
 LD = i686-w64-mingw32-ld
 else
-CC = /mingw32/bin/i686-w64-mingw32-gcc
-AS = /mingw32/bin/as
-LD = /mingw32/bin/ld
+CC = gcc
+AS = as
+LD = ld
 endif
 
 M4 = m4
