@@ -2,6 +2,8 @@
 
 This is the source code for Clozure CL.
 
+With some small modifications by johnfredcee to ease building with msys2 and mingw64
+
 Because CCL is written in itself, you need an already-working version of CCL to compile it.
 
 A working CCL consists of three parts.
