@@ -37,3 +37,5 @@ lisp-kernel/static-linuxppc/external-functions.h
 *.json
 *.pdb
 wx86cl64.exe
+*.exe
+*.oldimage
