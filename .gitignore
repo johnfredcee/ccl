@@ -33,9 +33,12 @@ lisp-kernel/darwinx8664/mach_exc_server.c
 lisp-kernel/darwinx8664/probes.h
 lisp-kernel/static-linuxppc/external-functions.h
 
+
 .vs/wx86cl64/v15/.suo
 *.json
 *.pdb
 wx86cl64.exe
 *.exe
 *.oldimage
+*.patch
+
