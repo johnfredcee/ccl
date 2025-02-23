@@ -353,7 +353,7 @@
               (! nfp-store-unboxed-word reg offset)))
         (#. memspec-nfp-type-double-float
             (if nested
-              (! nfp-store-unboxed-double-float-nested reg offset)
+              (! nfp-store-double-float-nested reg offset)
               (! nfp-store-double-float reg offset)))
         (#. memspec-nfp-type-single-float
             (if nested
@@ -470,7 +470,12 @@
              (result ($ arm::arg_z)))
         (arm2-do-lexical-reference seg arg ea)
         (arm2-set-nargs seg 1)
-        (! ref-constant ($ arm::fname) (backend-immediate-index (arm2-symbol-entry-locative '%cons-magic-next-method-arg)))
+        (let ((idx (backend-immediate-index (arm2-symbol-entry-locative '%cons-magic-next-method-arg))))
+          (if (< (+ arm::misc-data-offset (ash (+ idx 2) 2)) 4096)
+            (! ref-constant ($ arm::fname) idx)
+            (with-imm-target () (idxreg :s32)
+              (arm2-lri seg idxreg (+ arm::misc-data-offset (ash (+ idx 2) 2)))
+              (! ref-indexed-constant ($ arm::fname) idxreg))))
         (! call-known-symbol arg)
         (arm2-do-lexical-setq seg nil ea result)))))
 
@@ -562,7 +567,6 @@
            (*available-backend-crf-temps* arm-cr-fields)
            (bits 0)
            (*logical-register-counter* -1)
-           (*backend-all-lregs* ())
            (*arm2-undo-count* 0)
            (*backend-labels* (arm2-make-stack 64 target::subtag-simple-vector))
            (*arm2-undo-stack* (arm2-make-stack 64  target::subtag-simple-vector))
@@ -1492,11 +1496,11 @@
     (let* ((reg (arm2-register-constant-p imm)))
       (if reg
         (arm2-copy-register seg dest reg)
-        (let* ((idx (backend-immediate-index imm)))
-          (if (< idx 4094)
+        (let ((idx (backend-immediate-index imm)))
+          (if (< (+ arm::misc-data-offset (ash (+ idx 2) 2)) 4096)
             (! ref-constant dest idx)
             (with-imm-target () (idxreg :s32)
-              (arm2-lri seg idxreg (+ arm::misc-data-offset (ash (1+ idx) 2)))
+              (arm2-lri seg idxreg (+ arm::misc-data-offset (ash (+ idx 2) 2)))
               (! ref-indexed-constant dest idxreg)))))
       dest)))
 
@@ -1944,7 +1948,7 @@
                           (! 2d-dim1 dim1 src))
                         (! 2d-unscaled-index idx-reg dim1 unscaled-i unscaled-j))
                       (with-node-target (idx-reg node-val) v
-                        (if safe
+                        (if simple
                           (! array-data-vector-ref v src)
                           (progn
                             (setq v src)
@@ -3370,6 +3374,7 @@ v idx-reg constidx val-reg (arm2-unboxed-reg-for-aset seg type-keyword val-reg s
                                                 (vinsn-sequence-refs-reg-p
                                                  push-vinsn pop-vinsn popped-reg))))
                    (cond ((and (not (and pushed-reg-is-set popped-reg-is-set))
+                               (not (vinsn-sequence-has-some-attribute-p push-vinsn pop-vinsn :branch :jump))
                                (or (null popped-reg-is-reffed)
                                    (null pushed-reg-is-set)
                                    ;; If the popped register is
@@ -3384,8 +3389,7 @@ v idx-reg constidx val-reg (arm2-unboxed-reg-for-aset seg type-keyword val-reg s
                                    ;; be sure of the order in which
                                    ;; they might happen if the sequence
                                    ;; contains jumps or branches.
-                                   (vinsn-in-sequence-p pushed-reg-is-set popped-reg-is-reffed pop-vinsn)
-                                   (not (vinsn-sequence-has-some-attribute-p push-vinsn pop-vinsn :branch :jump))))
+                                   (vinsn-in-sequence-p pushed-reg-is-set popped-reg-is-reffed pop-vinsn)))
                           ;; We don't try this if anything's pushed on
                           ;; or popped from the vstack in the
                           ;; sequence, but there can be references to
@@ -5940,7 +5944,12 @@ v idx-reg constidx val-reg (arm2-unboxed-reg-for-aset seg type-keyword val-reg s
                      (temp ($ arm::temp2)))
                 (declare (cons constant))
                 (rplacd constant reg)
-                (! ref-constant temp (backend-immediate-index (car constant)))
+                (let* ((idx (backend-immediate-index (car constant))))
+                  (if (< (+ arm::misc-data-offset (ash (+ idx 2) 2)) 4096)
+                    (! ref-constant temp idx)
+                    (with-imm-target () (idxreg :s32)
+                      (arm2-lri seg idxreg (+ arm::misc-data-offset (ash (+ idx 2) 2)))
+                      (! ref-indexed-constant temp idxreg))))
                 (arm2-copy-register seg reg temp))))
           (when method-var
             (arm2-seq-bind-var seg method-var arm::next-method-context))
@@ -9360,18 +9369,6 @@ v idx-reg constidx val-reg (arm2-unboxed-reg-for-aset seg type-keyword val-reg s
                                          (:signed-fullword :s32)
                                          (t :u32))))))))
         (^))))))
-
-
-
-
-
-             
-(defarm2 arm2-%temp-list %temp-list (seg vreg xfer arglist)
-  (arm2-use-operator (%nx1-operator list) seg vreg xfer arglist))
-
-(defarm2 arm2-%temp-cons %temp-cons (seg vreg xfer car cdr)
-  (arm2-use-operator (%nx1-operator cons) seg vreg xfer car cdr))
-
 
 ;;; Under MacsBug 5.3 (and some others ?), this'll do a low-level user
 ;;; break.  If the debugger doesn't recognize the trap instruction,

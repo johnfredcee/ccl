@@ -494,9 +494,7 @@
 (defnx1 nx1-%null-ptr-p ((%null-ptr-p)) context (ptr)
   (nx1-form :value `(%ptr-eql ,ptr (%int-to-ptr 0))))
 
-(defnx1 nx1-binop ( (%ilsl) (%ilsr) (%iasr)
-                   (cons) (%temp-cons)) context
-        (arg1 arg2)
+(defnx1 nx1-binop ((%ilsl) (%ilsr) (%iasr) (cons)) context (arg1 arg2)
   (make-acode (%nx1-default-operator) (nx1-form :value arg1) (nx1-form :value arg2)))
 
 
@@ -806,7 +804,7 @@
                 (nx1-form :value v)))
               
 
-(defnx1 nx1-list-vector-values ((list) (vector) (values) (%temp-list)) context (&rest args)
+(defnx1 nx1-list-vector-values ((list) (vector) (values)) context (&rest args)
   (make-acode (%nx1-default-operator) (nx1-formlist context args)))
 
 

@@ -83,23 +83,23 @@ define(`old_double_float_zero',`d7')
 ')        
                         
 /* ARM conditions */
-eq = 0
-ne = 1
-cs = 2
-hs = cs        
-cc = 3
-lo = cc        
-mi = 4
-pl = 5
-vs = 6
-vc = 7
-hi = 8
-ls = 9
-ge = 10
-lt = 11
-gt = 12
-le = 13
-al = 14
+c_eq = 0
+c_ne = 1
+c_cs = 2
+c_hs = c_cs
+c_cc = 3
+c_lo = c_cc
+c_mi = 4
+c_pl = 5
+c_vs = 6
+c_vc = 7
+c_hi = 8
+c_ls = 9
+c_ge = 10
+c_lt = 11
+c_gt = 12
+c_le = 13
+c_al = 14
 
 /* Tags. */
 /* There are two-bit tags and three-bit tags. */
@@ -139,7 +139,7 @@ nil_value = (0x04000000+fulltag_nil)
 misc_bias = fulltag_misc
 cons_bias = fulltag_cons    
         
-unsigned_byte_24_mask = 0xe0000003 /* bits that should be clear in a boxed */
+unsigned_byte_24_mask = 0xfc000003 /* bits that should be clear in a boxed */
                                    /* (UNSIGNED-BYTE 24) */
             
 

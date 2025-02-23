@@ -96,14 +96,18 @@ whose name or ID matches <p>, or to any process if <p> is null"
 
 
 (defun list-restarts ()
-  (format *debug-io* "~&>   Type (:C <n>) to invoke one of the following restarts:")
+  (let ((prefix (format nil (format nil "~@[~D ~]>" (and (plusp *break-level*) *break-level*)))))
+    (when *break-condition*
+      (let ((*error-output* *debug-io*))
+        (%break-message nil *break-condition* *top-error-frame* prefix)))
+    (format *debug-io* "~&~A Type (:C <n>) to invoke one of the following restarts:" prefix))
   (display-restarts))
 
 (define-toplevel-command :break pop () "exit current break loop" (abort-break))
 (define-toplevel-command :break a () "exit current break loop" (abort-break))
 (define-toplevel-command :break go () "continue" (continue))
 (define-toplevel-command :break q () "return to toplevel" (toplevel))
-(define-toplevel-command :break r () "list restarts" (list-restarts))
+(define-toplevel-command :break r () "show error and list restarts" (list-restarts))
 
 
 (define-toplevel-command :break nframes ()
@@ -366,9 +370,12 @@ commands but aren't")
               (abort))
               |#
                )
-        (abort-break () 
-                     (unless (eq break-level 0)
-                       (abort))))
+       (abort-break () :report (lambda (stream)
+                                 (if (eq break-level 0)
+                                     (format stream "Exit toplevel.")
+                                     (format stream "Exit break level ~D." break-level)))
+                    (unless (eq break-level 0)
+                      (abort))))
        (clear-input input-stream)
       (format output-stream "~%"))))
 

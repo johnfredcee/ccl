@@ -24,7 +24,7 @@ _endfn
 ')
 	_beginfile
         __ifdef(`DARWIN')
-        .space 0x5000,0
+        .space 0x6000,0
         __endif
          .globl C(spjump_start)
 C(spjump_start):
@@ -185,7 +185,6 @@ C(spjump_start):
         _spjump(nmkunwind)
          .globl C(spjump_end)
 C(spjump_end):
-	.org 0x1000
 	
         _endfile
 		

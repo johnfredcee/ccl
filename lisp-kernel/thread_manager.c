@@ -662,6 +662,11 @@ os_get_current_thread_stack_bounds(void **base, natural *size)
 #endif
 #ifdef SOLARIS
   stack_t st;
+  /*
+   * If we #include <thread.h> then a conflicting definition
+   * for rwlock_destroy comes into scope.
+   */
+  extern int thr_stksegment(stack_t *ss);
   
   thr_stksegment(&st);
   *size = st.ss_size;
@@ -1368,9 +1373,11 @@ shutdown_thread_tcr(void *arg)
     if (tcr->flags & (1<<TCR_FLAG_BIT_FOREIGN)) {
       LispObj callback_macptr = nrs_FOREIGN_THREAD_CONTROL.vcell,
 	callback_ptr = ((macptr *)ptr_from_lispobj(untag(callback_macptr)))->address;
-    
+      int (*foreign_thread_control)(int) = (int (*)(int))callback_ptr;
+
       tsd_set(lisp_global(TCR_KEY), TCR_TO_TSD(tcr));
-      ((void (*)())ptr_from_lispobj(callback_ptr))(1);
+      foreign_thread_control(1);
+      //((void (*)(int))ptr_from_lispobj(callback_ptr))(1);
       tsd_set(lisp_global(TCR_KEY), NULL);
     }
 #ifdef DARWIN
@@ -1478,6 +1485,21 @@ tcr_cleanup(void *arg)
   }
   tcr->valence = TCR_STATE_FOREIGN;
   TCR_AUX(tcr)->shutdown_count = 1;
+
+#ifndef WINDOWS
+#ifdef LINUX
+  /*
+   * On Linux, there have been reports of getting SIGNAL_FOR_PROCESS_INTERRUPT
+   * as a thread is exiting.  Ignore that signal here, because this thread
+   * is in the process of exiting. (See issue #517.)
+   */
+  sigset_t set;
+  sigemptyset(&set);
+  sigaddset(&set, SIGNAL_FOR_PROCESS_INTERRUPT);
+  pthread_sigmask(SIG_BLOCK, &set, NULL);
+#endif
+#endif
+
   shutdown_thread_tcr(tcr);
   tsd_set(lisp_global(TCR_KEY), NULL);
 }
@@ -1689,56 +1711,6 @@ lisp_thread_entry(void *param)
 #endif
 }
 
-typedef 
-short (*suspendf)();
-
-
-void
-suspend_current_cooperative_thread()
-{
-  static suspendf cooperative_suspend = NULL;
-  void *xFindSymbol(void*,char*);
-
-  if (cooperative_suspend == NULL) {
-    cooperative_suspend = (suspendf)xFindSymbol(NULL, "SetThreadState");
-  }
-  if (cooperative_suspend) {
-    cooperative_suspend(1 /* kCurrentThreadID */,
-                        1 /* kStoppedThreadState */,
-                        0 /* kAnyThreadID */);
-  }
-}
-
-void *
-cooperative_thread_startup(void *arg)
-{
-
-  TCR *tcr = get_tcr(0);
-  LispObj *start_vsp;
-
-  if (!tcr) {
-    return NULL;
-  }
-#ifndef WINDOWS
-  pthread_cleanup_push(tcr_cleanup,(void *)tcr);
-#endif
-  SET_TCR_FLAG(tcr,TCR_FLAG_BIT_AWAITING_PRESET);
-  start_vsp = tcr->save_vsp;
-  do {
-    SEM_RAISE(TCR_AUX(tcr)->reset_completion);
-    suspend_current_cooperative_thread();
-      
-    start_lisp(tcr, 0);
-    tcr->save_vsp = start_vsp;
-  } while (tcr->flags & (1<<TCR_FLAG_BIT_AWAITING_PRESET));
-#ifndef WINDOWS
-  pthread_cleanup_pop(true);
-#else
-  tcr_cleanup(tcr);
-#endif
-  return NULL;
-}
-
 void *
 xNewThread(natural control_stack_size,
 	   natural value_stack_size,
@@ -1768,6 +1740,11 @@ xNewThread(natural control_stack_size,
 #endif
 
   return TCR_TO_TSD(activation.tcr);
+}
+
+void *
+do_nothing(void) {
+  return 0;
 }
 
 Boolean
@@ -1892,6 +1869,7 @@ get_tcr(Boolean create)
   if ((current == NULL) && create) {
     LispObj callback_macptr = nrs_FOREIGN_THREAD_CONTROL.vcell,
       callback_ptr = ((macptr *)ptr_from_lispobj(untag(callback_macptr)))->address;
+    int (*foreign_thread_control)(int) = (int (*)(int))callback_ptr;
     int i, nbindwords = 0;
     extern natural initial_stack_size;
     
@@ -1922,13 +1900,13 @@ get_tcr(Boolean create)
       *(--current->save_vsp) = 0;
       current->vs_area->active -= node_size;
     }
-    nbindwords = ((int (*)())ptr_from_lispobj(callback_ptr))(-1);
+    nbindwords = foreign_thread_control(-1);
     for (i = 0; i < nbindwords; i++) {
       *(--current->save_vsp) = 0;
       current->vs_area->active -= node_size;
     }
     TCR_AUX(current)->shutdown_count = 1;
-    ((void (*)())ptr_from_lispobj(callback_ptr))(0);
+    foreign_thread_control(0);
 
   }
   
@@ -2092,7 +2070,7 @@ create_thread_context_frame(mach_port_t, natural *, siginfo_t *, TCR*, native_th
 
 Boolean mach_suspend_tcr(TCR *tcr)
 {
-  thread_act_t thread = (thread_act_t)(tcr->native_thread_id);
+  mach_port_t thread = (mach_port_t)((intptr_t)tcr->native_thread_id);
   kern_return_t kret = thread_suspend(thread);
 
   if (kret == 0) {
@@ -2254,7 +2232,7 @@ resume_tcr(TCR *tcr)
 Boolean mach_resume_tcr(TCR *tcr)
 {
   ExceptionInformation *xp = tcr->suspend_context;
-  mach_port_t thread = (mach_port_t)(tcr->native_thread_id);
+  mach_port_t thread = (mach_port_t)((intptr_t)(tcr->native_thread_id));
 #if WORD_SIZE == 64
   MCONTEXT_T mc = UC_MCONTEXT(xp);
 #else

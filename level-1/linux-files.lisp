@@ -379,10 +379,6 @@ given is that of a group to which the current user belongs."
   (int-errno-call (#_setgid uid)))
   
 
-;;; On Linux, "stat" & friends are implemented in terms of deeper,
-;;; darker things that need to know what version of the stat buffer
-;;; they're talking about.
-
 #-windows-target
 (defun %stat-values (result stat)
   (if (eql 0 (the fixnum result)) 
@@ -456,9 +452,6 @@ given is that of a group to which the current user belongs."
 (defun %%stat (name stat)
   (with-filename-cstrs ((cname #+windows-target (windows-strip-trailing-slash name) #-windows-target name))
     (%stat-values
-     #+(and linux-target (not android-target))
-     (#_ __xstat #$_STAT_VER_LINUX cname stat)
-     #-(and linux-target (not android-target))
      (int-errno-ffcall (%kernel-import target::kernel-import-lisp-stat)
                        :address cname
                        :address stat
@@ -467,9 +460,6 @@ given is that of a group to which the current user belongs."
 
 (defun %%fstat (fd stat)
   (%stat-values
-   #+(and linux-target (not android-target))
-   (#_ __fxstat #$_STAT_VER_LINUX fd stat)
-   #-(and linux-target (not android-target))
    (int-errno-ffcall (%kernel-import target::kernel-import-lisp-fstat)
                      :int fd
                      :address stat
@@ -480,9 +470,6 @@ given is that of a group to which the current user belongs."
 (defun %%lstat (name stat)
   (with-filename-cstrs ((cname name))
     (%stat-values
-     #+(and linux-target (not android-target))
-     (#_ __lxstat #$_STAT_VER_LINUX cname stat)
-     #-(and linux-target (not android-target))
      (int-errno-ffcall (%kernel-import target::kernel-import-lisp-lstat)
 		       :address cname
 		       :address stat
@@ -706,8 +693,12 @@ given is that of a group to which the current user belongs."
   #+windows-target (%windows-realpath namestring)
   #-windows-target
   (%stack-block ((resultbuf #$PATH_MAX))
-    (with-filename-cstrs ((name namestring #|(tilde-expand namestring)|#))
-      (let* ((result (#_realpath name resultbuf)))
+    (with-filename-cstrs ((name namestring))
+      (let* ((result (ff-call
+                      (%kernel-import target::kernel-import-lisp-realpath)
+                      :address name
+                      :address resultbuf
+                      :address)))
         (declare (dynamic-extent result))
         (if (%null-ptr-p result)
 	  (let ((errno (%get-errno)))
@@ -1833,7 +1824,20 @@ space, and prefixed with PREFIX."
 
   (defun make-windows-command-line (strings)
     (with-output-to-string (out)
-      (do* ((strings strings (cdr strings)))
+      ;; The program name (i.e., argv[0]) is parsed differently than the program arguments.
+      ;; (See https://learn.microsoft.com/en-us/cpp/c-language/parsing-c-command-line-arguments)
+      ;; Only check for embedded whitespace in the program name and, if present, quote the
+      ;; entire program name.
+      (when (car strings)
+        (let* ((string (car strings))
+               (needs-quoting? (find-if #'whitespacep string)))
+          (when needs-quoting?
+            (write-char #\" out))
+          (write-string string out)
+          (when needs-quoting?
+            (write-char #\" out))
+          (when (cdr strings) (write-char #\space out))))
+      (do* ((strings (cdr strings) (cdr strings)))
            ((atom strings)     
             (if strings (write-string strings out)))
         (let* ((string (car strings))
@@ -1856,15 +1860,15 @@ space, and prefixed with PREFIX."
                         (setq quote-backslash k)
                         (return))
                        (t (setq literal-backslash k)
-                          (return)))))
+                        (return)))))
                  (if (> quote-backslash 0)
-                   (progn
-                     (write-char #\\ out)
-                     (write-char #\\ out)
-                     (decf quote-backslash))
-                   (progn
-                     (write-char #\\ out)
-                     (decf literal-backslash))))
+                     (progn
+                       (write-char #\\ out)
+                       (write-char #\\ out)
+                       (decf quote-backslash))
+                     (progn
+                       (write-char #\\ out)
+                       (decf literal-backslash))))
                 ((#\space #\tab)
                  (write-char #\" out)
                  (write-char c out)
@@ -2011,7 +2015,7 @@ space, and prefixed with PREFIX."
           (setq terminated (eql (#_WaitForSingleObjectEx
                                  (external-process-pid p)
                                  1000
-                                 #$true)
+                                 #$TRUE)
                                 #$WAIT_OBJECT_0))))))
   
 
@@ -2236,16 +2240,15 @@ not, why not; and what its result code was if it completed."
 (defun yield ()
   (process-allow-schedule))
 
-(defloadvar *host-page-size*
-    #-(or windows-target android-target)
-    (#_getpagesize)
-    #+windows-target
-    (rlet ((info #>SYSTEM_INFO))
-      (#_GetSystemInfo info)
-      (pref info #>SYSTEM_INFO.dwPageSize))
-    #+android-target
-    (#_sysconf #$_SC_PAGE_SIZE)
-    )
+(defun get-page-size ()
+  #-windows-target
+  (#_sysconf #$_SC_PAGESIZE)
+  #+windows-target
+  (rlet ((info #>SYSTEM_INFO))
+    (#_GetSystemInfo info)
+    (pref info #>SYSTEM_INFO.dwPageSize)))
+
+(defloadvar *host-page-size* (get-page-size))
 
 ;;(assert (= (logcount *host-page-size*) 1))
 

@@ -1294,7 +1294,7 @@
 (define-x8632-vinsn (return-or-fix-overflow :jumpLR) (()
                                                       ())
   (jo :fix)
-  (:byte #xf3) (ret)
+  (ret)
   :fix
   (jmp (:@ .SPfix-overflow)))
 
@@ -4414,6 +4414,36 @@
                                                     ((nfp :imm)))
   (movl (:@ (:%seg :rcontext) x8632::tcr.nfp) (:% nfp))
   (movss (:@ (:apply + 16 offset) (:% nfp)) (:%xmm val)))
+
+(define-x8632-vinsn (spill-complex-single-float :spill :nfp :set)
+    (()
+     ((val :complex-single-float)
+      (offset :u16const))
+     ((nfp :imm)))
+  (movl (:@ (:%seg :rcontext) x8632::tcr.nfp) (:% nfp))
+  (movq (:%xmm val) (:@ (:apply + 16 offset) (:% nfp))))
+
+(define-x8632-vinsn (reload-complex-single-float :reload :nfp :ref)
+    (((val :complex-single-float))
+     ((offset :u16const))
+     ((nfp :imm)))
+  (movl (:@ (:%seg :rcontext) x8632::tcr.nfp) (:% nfp))
+  (movq (:@ (:apply + 16 offset) (:% nfp)) (:%xmm val)))
+
+(define-x8632-vinsn (spill-complex-double-float :spill :nfp :set)
+    (()
+     ((val :complex-double-float)
+      (offset :u16const))
+     ((nfp :imm)))
+  (movl (:rcontext x8632::tcr.nfp) (:% nfp))
+  (movdqu (:%xmm val) (:@ (:apply + 16 offset) (:% nfp))))
+
+(define-x8632-vinsn (reload-complex-double-float :reload :nfp :ref)
+    (((val :complex-double-float))
+     ((offset :u16const))
+     ((nfp :imm)))
+  (movl (:@ (:%seg :rcontext) x8632::tcr.nfp) (:% nfp))
+  (movdqu (:@ (:apply + 16 offset) (:% nfp)) (:%xmm val)))
 
 (define-x8632-vinsn (nfp-load-double-float :nfp :ref) (((val :double-float))
                                                        ((offset :u16const)

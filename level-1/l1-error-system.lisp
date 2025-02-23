@@ -82,17 +82,14 @@
                  (format stream ", near ~a ~d," (if (typep source 'stream) "position" "index") position))
                (format stream " don't represent a valid character in ~s." encoding-name)))))
 
-
-             
-
 (define-condition print-not-readable (error)
   ((object :initarg :object :reader print-not-readable-object)
    (stream :initarg :stream :reader print-not-readable-stream))
   (:report (lambda (c stream)
-             (let* ((*print-readably* nil))
-               (format stream "Attempt to print object ~S on stream ~S ."
-                       (print-not-readable-object c)
-                       (print-not-readable-stream c))))))
+             (let ((*print-readably* nil)
+                   (*print-array* nil))
+               (format stream "~S cannot be printed readably."
+                       (print-not-readable-object c))))))
 
 (define-condition simple-warning (simple-condition warning) ())
 
@@ -125,8 +122,8 @@
    (by :initarg :by))
   (:report (lambda (c s)
              (with-slots (construct clause by) c
-               (format s "Clause ~S ignored in ~S form - shadowed by ~S ."
-                       clause construct by)))))
+               (format s "Ignoring ~S clause ~S because it is shadowed by ~S."
+                       construct clause by)))))
 
 (define-condition simple-error (simple-condition error) ())
 
@@ -207,7 +204,7 @@
                     (qualifier (if (eql subtag target::subtag-bignum)
                                  "32-bit "
                                  "")))
-               (format s "Cannot allocate a ~s with ~d elements.~&Objects of type ~s can can have at most ~&~d ~aelements in this implementation."
+               (format s "Cannot allocate a ~s with ~d elements.~&Objects of type ~s can have at most ~&~d ~aelements in this implementation."
                        typename
                        element-count
                        (copy-tree typename)
@@ -774,6 +771,12 @@
 	     (apply fn values))		
 	    (t				; with-simple-restart
 	     (throw tag (values nil t)))))))
+
+(define-condition restart-failure (control-error)
+  ((restart :initarg :restart :reader restart-failure-restart))
+  (:report (lambda (c s)
+             (format s "The ~a restart failed to transfer control dynamically as expected."
+                     (restart-name (restart-failure-restart c))))))
 
 (defun invoke-restart-no-return (restart &rest values)
   (declare (dynamic-extent values))

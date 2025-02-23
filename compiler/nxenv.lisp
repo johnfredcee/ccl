@@ -268,8 +268,8 @@
      (with-variable-c-frame  #.(logior operator-acode-list-mask operator-assignment-free-mask) :infer)
      (uvref  #.(logior operator-assignment-free-mask operator-single-valued-mask operator-acode-subforms-mask operator-side-effect-free-mask) :infer)
      (uvset  #.(logior operator-single-valued-mask operator-acode-subforms-mask) :infer)
-     (%temp-cons  #.(logior operator-assignment-free-mask operator-single-valued-mask operator-acode-subforms-mask operator-side-effect-free-mask) cons)
-     (%temp-List  #.(logior operator-single-valued-mask operator-side-effect-free-mask) list)
+     ()                                 ;was %temp-cons
+     ()                                 ;was %temp-list
      (%make-uvector  #.(logior operator-assignment-free-mask operator-single-valued-mask  operator-side-effect-free-mask operator-acode-subforms-mask) :infer)
      (%decls-body  0 :infer)
      (%old-gvector  #.(logior operator-assignment-free-mask operator-single-valued-mask operator-acode-subforms-mask operator-side-effect-free-mask) :infer)
@@ -458,19 +458,6 @@
 
 (defconstant $eaclosedbit 24)
 
-(defmacro %temp-push (value place &environment env)
-  (if (not (consp place))
-    `(setq ,place (%temp-cons ,value ,place))
-    (multiple-value-bind (dummies vals store-var setter getter)
-                         (get-setf-expansion place env)
-      (let ((valvar (gensym)))
-        `(let* ((,valvar ,value)
-                ,@(mapcar #'list dummies vals)
-                (,(car store-var) (%temp-cons ,valvar ,getter)))
-           ,@dummies
-           ,(car store-var)
-           ,setter)))))
-
 ; undo tokens :
 
 (defconstant $undocatch 0)  ; do some nthrowing
@@ -539,9 +526,9 @@
                  0)
                 (if (proclaimed-ignore-p sym) (%ilsl $vbitignore 1) 0))))
     (push node (lexenv.variables env))
-    (%temp-push node *nx-all-vars*)
+    (push node *nx-all-vars*)
     (setf (var-binding-info node) *nx-bound-vars*)
-    (%temp-push node *nx-bound-vars*)
+    (push node *nx-bound-vars*)
     (dolist (decl (nx-effect-vdecls state sym env) (setf (var-bits node) bits))
       (case (car decl)
         (special (setq bits (%ilogior bits (ash -1 $vbitspecial) (%ilsl $vbitparameter 1))))

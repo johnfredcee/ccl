@@ -640,13 +640,12 @@ are running on, or NIL if we can't find any useful information."
 
 (defun gentemp (&optional (prefix "T") (package *package*))
   "Creates a new symbol interned in package PACKAGE with the given PREFIX."
-  (loop
-    (let* ((new-pname (%str-cat (ensure-simple-string prefix) 
-                                (%integer-to-string %gentemp-counter)))
-           (sym (find-symbol new-pname package)))
-      (if sym
-        (setq %gentemp-counter (%i+ %gentemp-counter 1))
-        (return (values (intern new-pname package))))))) ; 1 value.
+  (let ((prefix (ensure-simple-string prefix)))
+    (loop
+      (multiple-value-bind (sym where)
+          (intern (%str-cat prefix (%integer-to-string (incf %gentemp-counter))) package)
+        (when (null where)
+          (return sym))))))
 
 
 
@@ -936,7 +935,7 @@ are running on, or NIL if we can't find any useful information."
 		  (merge-pathnames (ccl-directory) ".git"))))
     (multiple-value-bind (status exit-code)
 	(external-process-status
-	 (run-program "git" (list "--git-dir" git-dir "describe" "HEAD")
+	 (run-program "git" (list "--git-dir" git-dir "describe" "--dirty")
 		      :output s :error :output))
       (when (and (eq status :exited)
 		 (= exit-code 0))
@@ -1694,3 +1693,6 @@ are running on, or NIL if we can't find any useful information."
 #+x86-target
 (defun invariant-tsc-p ()
   (logbitp 8  (nth-value 3 (x86-cpuid #x80000007))))
+
+(defun get-errno ()
+  (- (%get-errno)))

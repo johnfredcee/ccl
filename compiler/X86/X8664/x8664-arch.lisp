@@ -874,6 +874,7 @@
   lisp-sigexit
   jvm-init
   lisp-lstat
+  lisp-realpath
 )
 
 (defmacro nrs-offset (name)
@@ -958,8 +959,6 @@
                        :unsigned-16-bit-vector)
                       ((and (>= low 0) (<= high #xffffffff))
                        :unsigned-32-bit-vector)
-                      ((and (>= low 0) (<= high #xffffffffffffffff))
-                       :unsigned-64-bit-vector)
                       ((and (>= low -128) (<= high 127))
                        :signed-8-bit-vector)
                       ((and (>= low -32768) (<= high 32767))
@@ -969,6 +968,8 @@
                       ((and (>= low target-most-negative-fixnum)
                             (<= high target-most-positive-fixnum))
                        :fixnum-vector)
+                      ((and (>= low 0) (<= high #xffffffffffffffff))
+                       :unsigned-64-bit-vector)
                       ((and (>= low (ash -1 63)) (<= high (1- (ash 1 63))))
                        :signed-64-bit-vector)
                       (t :simple-vector))))

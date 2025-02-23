@@ -2800,9 +2800,10 @@ initially NIL.")
  #\# 
  #\C
  #'(lambda (stream char arg)
-     (require-no-numarg char arg )
-     (multiple-value-bind (form note) (read-internal stream t nil t)
-       (values (unless *read-suppress* (apply #'complex form)) (and note (list note))))))
+     (require-no-numarg char arg)
+     (let ((*backquote-stack* (when *backquote-stack* "complex")))
+       (multiple-value-bind (form note) (read-internal stream t nil t)
+         (values (unless *read-suppress* (apply #'complex form)) (and note (list note)))))))
 
 (set-dispatch-macro-character 
  #\#
@@ -2812,17 +2813,20 @@ initially NIL.")
 ;;; Read a valid, non-numeric token string from stream; *READ-SUPPRESS*
 ;;; is known to be false.
 (defun read-symbol-token (stream)
-  (multiple-value-bind (firstch attr) (%next-non-whitespace-char-and-attr-no-eof stream)
+  (multiple-value-bind (firstch attr)
+      (%next-non-whitespace-char-and-attr-no-eof stream)
     (declare (fixnum attr))
     (with-token-buffer (tb)
       (if (or (= attr $CHT_ILL)
-              (logbitp $cht_macbit attr)
-              (multiple-value-bind (escapes explicit-package nondots) (%collect-xtoken tb stream firstch)
+              (= attr $cht_tmac)
+              (multiple-value-bind (escapes explicit-package nondots)
+                  (%collect-xtoken tb stream firstch)
                 (declare (ignore nondots))
                 (%casify-token tb (unless (atom escapes) escapes))
                 (or explicit-package
                     (and (not escapes)
-                         (%token-to-number tb (%validate-radix *read-base*))))))
+                         (%token-to-number tb
+                                           (%validate-radix *read-base*))))))
         (%err-disp $XBADSYM)
         (%string-from-token tb)))))
 

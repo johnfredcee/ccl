@@ -557,6 +557,8 @@
            (let* ((form (car args)) 
                   (value (cadr args)))
              ;This must match get-setf-method .
+             (when (symbolp form)
+               (setq form (%symbol-macroexpand form env)))
              (cond ((atom form)
                     (progn
                       (unless (symbolp form)(signal-program-error $XNotSym form))
@@ -578,7 +580,7 @@
                         (cond
                           ((setq temp (%setf-method accessor))
                            (if (symbolp temp)
-                             `(,temp ,@(cdar args) ,value)
+                             `(,temp ,@(cdr form) ,value)
                              (multiple-value-bind (dummies vals storevars setter #|getter|#)
                                  (funcall temp form env)
                                (do* ((d dummies (cdr d))
@@ -595,11 +597,11 @@
                           ((and (setq temp (structref-info accessor env))
                                 (accessor-structref-info-p temp)
                                 (not (refinfo-r/o (structref-info-refinfo temp))))
-                           (let* ((nargs (length (%cdar args))))
+                           (let* ((nargs (length (cdr form))))
                              (unless (eql nargs 1)
                                (signal-simple-program-error
-                                "In ~s, structure accessor ~s requires exactly 1 argument but is being called with ~d arguments." `(setf ,@args) accessor nargs)))
-                           (let ((form (defstruct-ref-transform temp (%cdar args) env t))
+                                "In ~s, structure accessor ~s requires exactly 1 argument but is being called with ~d arguments." `(setf ,form ,value) accessor nargs)))
+                           (let ((form (defstruct-ref-transform temp (cdr form) env t))
                                  (type (defstruct-type-for-typecheck (structref-info-type temp) env)))
                              (if (eq type t)
                                `(setf ,form ,value)
@@ -835,7 +837,9 @@ form is not evaluated if the variable is already BOUNDP."
 
 (defmacro cond (&rest args &aux clause)
   (when args
-     (setq clause (car args))
+    (setq clause (car args))
+    (unless (consp clause)
+      (signal-program-error "Clause ~s should be a non-empty list" clause))
      (if (cdr clause)         
          `(if ,(car clause) (progn ,@(cdr clause)) (cond ,@(cdr args)))
        (if (cdr args) `(or ,(car clause) (cond ,@(cdr args)))
@@ -3640,6 +3644,10 @@ element-type is numeric."
       (if struct-transform
         (setq place (defstruct-ref-transform struct-transform (cdr place) env)
               sym (car place)))
+      ;;; https://github.com/Clozure/ccl/issues/326
+      (if (eq (car place) 'the)
+          (setq place (caddr place)
+                sym (car place)))
       (if (member  sym '(svref ccl::%svref ccl::struct-ref))
         (let* ((v (gensym)))
           `(let* ((,v ,(cadr place)))

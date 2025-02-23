@@ -23,15 +23,14 @@
 #include <sys/stat.h>
 #include <windows.h>
 #include <psapi.h>
+#include <ntsecapi.h>
 #include <dirent.h>
 #include <signal.h>
 #undef __argv
 #include <stdio.h>
 #include <math.h>
+#include <sys/time.h>
 
-#ifndef WIN_32
-#define _dosmaperr mingw_dosmaperr
-#else
 void
 _dosmaperr(unsigned long oserrno)
 {
@@ -175,10 +174,14 @@ _dosmaperr(unsigned long oserrno)
     errno = EINVAL;
     break;
   }
+#ifndef WIN_32
+  if (oserrno >= ERROR_WRITE_PROTECT && oserrno <= ERROR_SHARING_BUFFER_EXCEEDED)
+      errno = EACCES;
+  else if (oserrno >= ERROR_INVALID_STARTING_CODESEG && oserrno <= ERROR_INFLOOP_IN_RELOC_CHAIN)
+    errno = ENOEXEC;
+#endif
 }
     
-#endif
-
 #define MAX_FD 32
 
 HANDLE
@@ -384,9 +387,9 @@ pipe_read(HANDLE hfile, void *buf, unsigned int count)
       }
     }
     if (navail != 0) {
-      return lisp_standard_read(hfile, buf, count);
+      return lisp_standard_read(hfile, buf, (navail < count) ? navail : count);
     }
-    if (SleepEx(50, TRUE) == WAIT_IO_COMPLETION) {
+    if (SleepEx(1, TRUE) == WAIT_IO_COMPLETION) {
       errno = EINTR;
       return -1;
     }
@@ -1035,30 +1038,51 @@ init_winsock()
 void
 reserve_tls_slots()
 {
-  unsigned int first_available, n, i;
+  unsigned int last_slot, i, cnt_pad;
+  unsigned int pad_slots[30];
+  
+  /* Since there is no way to reserve specific TLS indices, we reserve
+   * indices upto 30, hope to reserve 30 to 63 in one continuous block
+   * and then free those below 30.
+   */
+  cnt_pad = 0;
+  do {
+    last_slot = TlsAlloc();
+    pad_slots[cnt_pad++] = last_slot;
+  } while (last_slot < 30 && cnt_pad < 30);
 
-  first_available = TlsAlloc();
-  if (first_available > 30) {
-    fprintf(dbgout, "Can't allocate required TLS indexes.\n");
-    fprintf(dbgout, "First available index value was %u\n", first_available);
+  if (last_slot != 30) {
+    fprintf(dbgout, "could not reserve TLS slots from 30 to 63: Slot %u already reserved\n", 30);
     exit(1);
   }
-  TlsFree(first_available);
-
-  for (i = first_available; i < 30; i++) {
-    n = TlsAlloc();
-    if (n != i) {
-      fprintf(dbgout, "unexpected TLS index value: wanted %u, got %u\n", i, n);
+  for (i = 31; i < 64; i++) {
+    last_slot = TlsAlloc();
+    if (last_slot != i) {
+      fprintf(dbgout, "could not reserve TLS slots from 30 to 63: Slot %u already reserved\n", i);
       exit(1);
     }
   }
-  for (i = 30; i < 64; i++) {
-    n = TlsAlloc();
-    if (n != i) {
-      fprintf(dbgout, "unexpected TLS index value: wanted %u, got %u\n", i, n);
-      exit(1);
-    }
-  }
-  for (i = first_available; i < 30; i++)
-    TlsFree(i);
+  for (i = 0; i < cnt_pad; i++)
+    if (pad_slots[i] < 30)
+      TlsFree(pad_slots[i]);
 }
+
+wchar_t *
+lisp_realpath(wchar_t *filename, wchar_t *resolved_name)
+{
+    return NULL;
+}
+
+/*
+ * This is a kludge to ensure that advapi32.dll is linked with the
+ * lisp kernel.  Lisp's RNG needs to call SystemFunction036 aka
+ * RtlGenRandom from that library.
+ */
+void
+reference_advapi32()
+{
+  char buf[4];
+  ULONG len = sizeof(buf);
+  SystemFunction036(&buf, len);
+}
+

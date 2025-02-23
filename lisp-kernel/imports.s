@@ -57,7 +57,7 @@ import_ptrs_start:
 	defimport(lisp_egc_control)
 	defimport(lisp_bug)
 	defimport(xNewThread)
-	defimport(cooperative_thread_startup)
+	defimport(do_nothing)
 	defimport(xDisposeThread)
 	defimport(xThreadCurrentStackSpace)
 	defimport(usage_exit)
@@ -102,6 +102,7 @@ import_ptrs_start:
         defimport(lisp_sigexit)
         defimport(jvm_init)
         defimport(lisp_lstat)
+        defimport(lisp_realpath)
    
         .globl C(import_ptrs_base)
 C(import_ptrs_base):
@@ -115,15 +116,5 @@ C(import_ptrs_base):
         __endif
         __endif
 	__endif
-
-        /* Need to be sure that the kernel links against advapi32.dll ;
-           the random number generator needs to call into that library */
-	__ifdef(`WIN_64')
-	.globl C(SystemFunction036)
-	.long C(SystemFunction036)
-	__endif
-
-
-
 
 	_endfile

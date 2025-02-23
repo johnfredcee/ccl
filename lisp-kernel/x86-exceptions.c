@@ -42,6 +42,7 @@
 #endif
 #ifdef WINDOWS
 #include <windows.h>
+#include <io.h>
 #ifdef WIN_64
 #include <winternl.h>
 #include <ntstatus.h>
@@ -678,7 +679,6 @@ handle_alloc_trap(ExceptionInformation *xp, TCR *tcr, Boolean *notify)
   return true;
 }
 
-  
 int
 callback_to_lisp (TCR * tcr, LispObj callback_macptr, ExceptionInformation *xp,
                   natural arg1, natural arg2, natural arg3, natural arg4, natural arg5)
@@ -712,8 +712,12 @@ callback_to_lisp (TCR * tcr, LispObj callback_macptr, ExceptionInformation *xp,
      pointers (and at least should have called prepare_for_callback()).
   */
   callback_ptr = ((macptr *)ptr_from_lispobj(untag(callback_macptr)))->address;
+  typedef int (*callback_fn_type)(ExceptionInformation *, natural, natural,
+                                  natural, natural, natural);
+  callback_fn_type callback_fn = (callback_fn_type)callback_ptr;
+
   UNLOCK(lisp_global(EXCEPTION_LOCK), tcr);
-  delta = ((int (*)())callback_ptr) (xp, arg1, arg2, arg3, arg4, arg5);
+  delta = callback_fn(xp, arg1, arg2, arg3, arg4, arg5);
   LOCK(lisp_global(EXCEPTION_LOCK), tcr);
 
 #ifdef X8632
@@ -2239,7 +2243,6 @@ windows_arbstack_exception_handler(EXCEPTION_POINTERS *exception_pointers)
 
     if ((current_sp >= cs->low) &&
         (current_sp < cs->high)) {
-      debug_show_registers(context, exception_pointers->ExceptionRecord, 0);
       FBug(context, "Exception on foreign stack\n");
       return EXCEPTION_CONTINUE_EXECUTION;
     }

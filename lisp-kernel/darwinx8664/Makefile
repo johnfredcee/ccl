@@ -15,10 +15,7 @@
 
 VC_REVISION := "$(shell git describe --dirty 2>/dev/null || echo unknown)"
 
-OSVERSION=10.9
-
-MDYNAMIC_NO_PIC = $(shell ($(CC) --help -v 2>&1 | grep -q -e "-mdynamic-no-pic") && /bin/echo "-mdynamic-no-pic")
-
+OSVERSION=10.13
 
 VPATH = ..
 RM = /bin/rm
@@ -28,21 +25,6 @@ M4 = gm4
 
 M4FLAGS = -DDARWIN -DX86 -DX8664 -DTCR_IN_GPR
 ASFLAGS = -arch x86_64 -g
-
-# In Xcode 7, the clang integrated assember complains that .stabs
-# directives are unsupported.  Work around this by using the system
-# assembler.  (Apparently, we'll have to quit using .stabs directives
-# at some point soon.)
-
-# Since Xcode 7 only runs on Yosemite and later, use OS version as a
-# heuristic to detect whether the -Q flag is available.  It seems to
-# be available as far back as Lion, but on Snow Leopard, "as" doesn't
-# know about -Q.
-
-yosemite_plus := $(shell uname -r | awk -F. '{ if ($$1 >= 14) print "t" }')
-ifeq ($(yosemite_plus),t)
-ASFLAGS += -Q
-endif
 
 CDEFINES = -DDARWIN -DX86 -DX8664 -DTCR_IN_GPR -DVC_REVISION=$(VC_REVISION) \
 	   -DUSE_DTRACE
@@ -54,10 +36,10 @@ WFORMAT = -Wno-format
 PLATFORM_H = platform-darwinx8664.h
 
 .s.o:
-	$(M4) $(M4FLAGS) -I../ $< | $(AS) $(ASFLAGS) -o $@
+	$(M4) $(M4FLAGS) -I../ $< | $(AS) $(ASFLAGS) -mmacosx-version-min=$(OSVERSION) -o $@ -
 .c.o:
 	$(CC) -include ../$(PLATFORM_H) -c $< -arch x86_64 $(CDEFINES) \
-	$(CDEBUG) $(COPT) $(WFORMAT) $(MDYNAMIC_NO_PIC) \
+	$(CDEBUG) $(COPT) $(WFORMAT) \
 	 -I. -mmacosx-version-min=$(OSVERSION) -o $@
 
 SPOBJ = x86-spjump64.o x86-spentry64.o x86-subprims64.o 
@@ -85,13 +67,13 @@ all:	../../dx86cl64
 
 ../../dx86cl64:	 $(KSPOBJ) $(KERNELOBJ) $(DEBUGOBJ) Makefile
 	cc -mmacosx-version-min=$(OSVERSION) -arch x86_64 \
-	 -Wl,-no_pie,-pagezero_size,0x11000,-seg1addr,0x11000 \
+	 -Wl,-no_pie,-pagezero_size,0x10000,-seg1addr,0x10000 \
 	 -o $@ $(SPOBJ) $(KERNELOBJ) $(DEBUGOBJ)
 
 $(SPOBJ): $(SPINC)
 $(ASMOBJ): $(SPINC)
 $(COBJ): $(CHEADERS) probes.h
-$(DEBUGOBJ): $(CHEADERS) lispdcmd.h
+$(DEBUGOBJ): $(CHEADERS) lispdcmd.h probes.h
 
 probes.h: probes.d
 	dtrace -h -s $<
@@ -100,18 +82,24 @@ thread_manager.o: thread_manager.c
 
 mach_exc_server.o: mach_exc_server.c mach_exc.h
 
-mach_exc.h mach_exc_server.c: mach_exc.defs
+# What we want here is a grouped target, but we need
+# GNU make version 4.3 for that.
+# mach_exc.h mach_exc_server.c &: mach_exc.defs
+
+mach_exc_server.c: mach_exc.defs
 	mig -arch x86_64 -header /dev/null -user /dev/null \
 		-sheader mach_exc.h -server mach_exc_server.c \
 		 $<
 
-cclean:
-	$(RM) -f $(KERNELOBJ) $(DEBUGOBJ) ../../dx86cl64 
+mach_exc.h: mach_exc_server.c
 
-# Some earlier versions of this Makefile built "subprims_r.o".  
-# (That file is now defunct.)
+cclean:
+	$(RM) -f $(KERNELOBJ) $(DEBUGOBJ) ../../dx86cl64 \
+	  probes.h \
+	  mach_exc.h mach_exc_server.c
+
 clean:	cclean
-	$(RM) -f $(SPOBJ) $(KSPOBJ) subprims_r.o
+	$(RM) -f $(SPOBJ) $(KSPOBJ)
 
 strip:	../../dx86cl64
 	strip -s retain ../../dx86cl64

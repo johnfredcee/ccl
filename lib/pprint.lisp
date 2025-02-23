@@ -330,7 +330,7 @@
                              (if (get-*print-frob* '*print-level*)
                                (- *print-level* *current-level*))
                              nil nil)))
-    (let ((fn (get-printer object table)))
+    (let ((fn (get-printer object (or table *standard-pprint-dispatch-table*))))
       (values (or fn #'non-pretty-print) (not (null fn))))))
 
 (defun get-printer-internal (object hash others)
@@ -1504,7 +1504,7 @@
     (if (and (consp args) *format-top-level*)(copy-list args) args)))
 
 (defmacro formatter (control-string) ; maybe-initiate-xp-printing?
-  (setq control-string (require-type control-string 'string))
+  (setq control-string (ensure-simple-string control-string))
   `(function 
     (lambda (s &rest args)
       ; IFFY because things can end up in the same place on the stack

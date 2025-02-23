@@ -199,22 +199,27 @@
 
 
 (defun fold-constant-subforms (call env)
-    (let* ((constants nil)
-           (forms nil))
-      (declare (list constants forms))
-      (dolist (form (cdr call))
-        (setq form (nx-transform form env))
-        (if (numberp form)
-          (setq constants (%temp-cons form constants))
-          (setq forms (%temp-cons form forms))))
-      (if constants
-        (let* ((op (car call))
-               (constant (if (cdr constants) (handler-case (apply op constants)
-                                               (error (c) (declare (ignore c))
-                                                      (return-from fold-constant-subforms (values call t))))
-                             (car constants))))
-          (values (if forms (cons op (cons constant (reverse forms))) constant) t))
-        (values call nil))))
+  (let* ((constants nil)
+         (forms nil))
+    (declare (list constants forms))
+    (dolist (form (cdr call))
+      (setq form (nx-transform form env))
+      (if (numberp form)
+        (push form constants)
+        (push form forms)))
+    (if constants
+      (let* ((op (car call))
+             (constant (if (cdr constants)
+                         (handler-case (apply op (nreverse constants))
+                           (error (c) (declare (ignore c))
+                                  (return-from fold-constant-subforms
+                                    (values call t))))
+                         (car constants))))
+        (values (if forms
+                  (cons op (cons constant (nreverse forms)))
+                  constant)
+                t))
+      (values call nil))))
 
 ;;; inline some, etc. in some cases
 ;;; in all cases, add dynamic-extent declarations
@@ -311,6 +316,13 @@
 
 (define-compiler-macro 1+ (x)
   `(+ ,x 1))
+
+(define-compiler-macro ash (&whole call &environment env integer count)
+  (if (and (integerp count) (zerop count))
+      (if (nx-form-typep integer 'integer env)
+          integer
+          call)
+      call))
 
 (define-compiler-macro append  (&whole call
                                        &optional arg0
@@ -717,6 +729,9 @@
     (type-specifier ctype)))
 
 
+(defun quoted-zero-p (form)
+  (and (quoted-form-p form)
+       (eql 0 (%cadr form))))
 
 (define-compiler-macro make-array (&whole call &environment env dims &rest keys)
   (if (constant-keywords-p keys)
@@ -756,13 +771,16 @@
                                     initial-contents-p)))
                      (if
                        (or (null initial-element-p)
-                           (cond ((eql element-type-keyword :double-float-vector)
+                           (cond ((eq element-type-keyword :double-float-vector)
                                   (eql initial-element 0.0d0))
-                                 ((eql element-type-keyword :single-float-vector)
-                                  (eql initial-element 0.0s0))
-                                 ((eql element-type :simple-string)
+                                 ((eq element-type-keyword :single-float-vector)
+                                  (eql initial-element 0.0f0))
+                                 ((eq element-type-keyword :simple-string)
                                   (eql initial-element #\Null))
-                                 (t (eql initial-element 0))))
+                                 (t (or (eql initial-element 0)
+                                        ;; for :initial-element '0
+                                        ;; this actually comes up in the wild
+                                        (quoted-zero-p initial-element)))))
                        `(allocate-typed-vector ,element-type-keyword ,dims)
                        `(allocate-typed-vector ,element-type-keyword ,dims ,initial-element)))
                     (t                        ;Should do more here
@@ -1277,7 +1295,7 @@
 
 (define-compiler-macro * (&optional (n0 nil n0p) (n1 nil n1p) &rest more)
   (if more
-    `(*-2 ,n0 (* ,n1 ,@more))
+    `(* (*-2 ,n0 ,n1) ,@more)
     (if n1p
       `(*-2 ,n0 ,n1)
       (if n0p
@@ -1523,20 +1541,20 @@
                       `(eql (typecode ,thing) ,typecode)
                       (let* ((temp (gensym)))
                         `(let* ((,temp ,thing))
-                          (and (eql (typecode ,temp) ,typecode)
-                           (eq (uvsize ,temp) ,(car dims)))))))
+                           (and (eql (typecode ,temp) ,typecode)
+                                (eq (uvsize ,temp) ,(car dims)))))))
                    ((* :maybe)
                     (let* ((temp (gensym))
                            (tempcode (gensym)))
                       `(let* ((,temp ,thing)
                               (,tempcode (typecode ,temp)))
-                        (or (and (eql ,tempcode ,typecode)
-                             ,@(unless (eq (car dims) '*)
-                                       `((eq (uvsize ,temp) ,(car dims)))))
-                         (and (eql ,tempcode target::subtag-vectorH)
-                          (eql (ldb target::arrayH.flags-cell-subtag-byte (the fixnum (%svref ,temp target::arrayH.flags-cell))) ,typecode)
-                          ,@(unless (eq (car dims) '*)
-                                    `((eq (%svref ,temp target::vectorH.logsize-cell) ,(car dims)))))))))))))
+                         (or (and (eql ,tempcode ,typecode)
+                                  ,@(unless (eq (car dims) '*)
+                                      `((eq (uvsize ,temp) ,(car dims)))))
+                             (and (eql ,tempcode target::subtag-vectorH)
+                                  (eql (ldb target::arrayH.flags-cell-subtag-byte (the fixnum (%svref ,temp target::arrayH.flags-cell))) ,typecode)
+                                  ,@(unless (eq (car dims) '*)
+                                      `((eq (%svref ,temp target::vectorH.physsize-cell) ,(car dims)))))))))))))
         `(values (array-%%typep ,thing ,ctype)))))))
 
 
